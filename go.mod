@@ -1,4 +1,4 @@
-module github.com/kyungw00k/anon-proxy
+module github.com/kyungw00k/proxytap
 
 go 1.25.0
 

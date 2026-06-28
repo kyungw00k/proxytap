@@ -1,10 +1,10 @@
 # Binaries
-/proxyhubd
+/proxytapd
 /bin/
 /dist/
 
 # Local state
-.anon-proxy/
+.proxytap/
 *.db
 *.sqlite
 

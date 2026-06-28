@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/kyungw00k/anon-proxy/internal/fetcher"
-	"github.com/kyungw00k/anon-proxy/internal/pool"
+	"github.com/kyungw00k/proxytap/internal/fetcher"
+	"github.com/kyungw00k/proxytap/internal/pool"
 )
 
 // Server is the read-mostly control plane. It exposes JSON endpoints for the

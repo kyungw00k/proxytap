@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/kyungw00k/anon-proxy/internal/pool"
+	"github.com/kyungw00k/proxytap/internal/pool"
 	"golang.org/x/net/proxy"
 )
 

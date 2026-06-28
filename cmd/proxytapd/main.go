@@ -12,11 +12,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kyungw00k/anon-proxy/internal/api"
-	"github.com/kyungw00k/anon-proxy/internal/checker"
-	"github.com/kyungw00k/anon-proxy/internal/fetcher"
-	"github.com/kyungw00k/anon-proxy/internal/pool"
-	"github.com/kyungw00k/anon-proxy/internal/proxy"
+	"github.com/kyungw00k/proxytap/internal/api"
+	"github.com/kyungw00k/proxytap/internal/checker"
+	"github.com/kyungw00k/proxytap/internal/fetcher"
+	"github.com/kyungw00k/proxytap/internal/pool"
+	"github.com/kyungw00k/proxytap/internal/proxy"
 )
 
 func main() {
@@ -134,7 +134,7 @@ func parseAnonLevel(s string) checker.AnonLevel {
 func defaultCacheDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return filepath.Join(os.TempDir(), "anon-proxy")
+		return filepath.Join(os.TempDir(), "proxytap")
 	}
-	return filepath.Join(home, ".anon-proxy", "cache")
+	return filepath.Join(home, ".proxytap", "cache")
 }

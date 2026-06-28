@@ -138,7 +138,7 @@ func (f *Fetcher) fetchBody(ctx context.Context, url string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("User-Agent", "anon-proxy/0.1 (https://github.com/kyungw00k)")
+	req.Header.Set("User-Agent", "proxytap/0.1 (https://github.com/kyungw00k)")
 	resp, err := f.httpClient.Do(req)
 	if err != nil {
 		return "", err

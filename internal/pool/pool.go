@@ -5,8 +5,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/kyungw00k/anon-proxy/internal/checker"
-	"github.com/kyungw00k/anon-proxy/internal/fetcher"
+	"github.com/kyungw00k/proxytap/internal/checker"
+	"github.com/kyungw00k/proxytap/internal/fetcher"
 )
 
 // Entry is the live, mutable per-proxy state tracked by the pool.

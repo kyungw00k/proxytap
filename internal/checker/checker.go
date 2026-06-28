@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/kyungw00k/anon-proxy/internal/fetcher"
+	"github.com/kyungw00k/proxytap/internal/fetcher"
 	"golang.org/x/net/proxy"
 )
 
@@ -82,7 +82,7 @@ func (c *Checker) Check(ctx context.Context, p fetcher.Proxy) Result {
 		res.Reason = "bad request: " + err.Error()
 		return res
 	}
-	req.Header.Set("User-Agent", "anon-proxy-check/0.1")
+	req.Header.Set("User-Agent", "proxytap-check/0.1")
 
 	resp, err := client.Do(req)
 	if err != nil {
