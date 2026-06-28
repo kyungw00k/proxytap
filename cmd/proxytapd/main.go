@@ -15,6 +15,7 @@ import (
 	"github.com/kyungw00k/proxytap/internal/api"
 	"github.com/kyungw00k/proxytap/internal/checker"
 	"github.com/kyungw00k/proxytap/internal/fetcher"
+	"github.com/kyungw00k/proxytap/internal/mitm"
 	"github.com/kyungw00k/proxytap/internal/pool"
 	"github.com/kyungw00k/proxytap/internal/proxy"
 )
@@ -31,12 +32,13 @@ func main() {
 		minAnon       = flag.String("min-anon", "elite", "minimum anonymity level: elite|anonymous|transparent")
 		maxFailures   = flag.Int("max-failures", 5, "consecutive failures before a proxy is quarantined")
 		capacity      = flag.Int("pool-capacity", 500, "max proxies held in the pool")
+		mitmEnabled   = flag.Bool("mitm", true, "enable MITM detection on healthy proxies")
 	)
 	flag.Parse()
 
 	if err := run(*proxyListen, *apiListen, *cacheDir,
 		*fetchInterval, *checkInterval, *checkTimeout, *checkWorkers,
-		*minAnon, *maxFailures, *capacity); err != nil {
+		*minAnon, *maxFailures, *capacity, *mitmEnabled); err != nil {
 		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
 		os.Exit(1)
 	}
@@ -47,6 +49,7 @@ func run(
 	fetchInterval, checkInterval, checkTimeout time.Duration,
 	checkWorkers int,
 	minAnon string, maxFailures, capacity int,
+	mitmEnabled bool,
 ) error {
 	rootCtx, cancel := signal.NotifyContext(context.Background(),
 		os.Interrupt, syscall.SIGTERM)
@@ -58,9 +61,23 @@ func run(
 		MinAnonLevel: parseAnonLevel(minAnon),
 		Capacity:     capacity,
 	})
+	var mitmEngine *mitm.Engine
+	if mitmEnabled {
+		mitmEngine = mitm.New(mitm.Options{Timeout: checkTimeout})
+		if err := mitmEngine.DiscoverPins(rootCtx); err != nil {
+			fmt.Fprintf(os.Stderr, "warn: pin discovery failed: %v\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "mitm: pinned %d hosts\n", len(mitmEngine.SnapshotPins()))
+		}
+		if err := mitmEngine.DiscoverPlainRef(rootCtx); err != nil {
+			fmt.Fprintf(os.Stderr, "warn: plain-ref discovery failed: %v\n", err)
+		}
+	}
+
 	chk := checker.New(checker.Options{
 		Timeout:    checkTimeout,
 		Concurrent: checkWorkers,
+		MITM:       mitmEngine,
 	})
 
 	initial, err := f.Fetch(rootCtx)
@@ -99,7 +116,7 @@ func run(
 	}()
 
 	// control-plane REST API
-	apiSrv := api.New(apiListen, p, f)
+	apiSrv := api.New(apiListen, p, f, chk)
 	go func() {
 		fmt.Fprintf(os.Stderr, "api: listening on http://%s\n", apiListen)
 		if err := apiSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

@@ -12,17 +12,19 @@ import (
 	"time"
 
 	"github.com/kyungw00k/proxytap/internal/fetcher"
+	"github.com/kyungw00k/proxytap/internal/mitm"
 	"golang.org/x/net/proxy"
 )
 
 // Result captures one health-check probe for an upstream proxy.
 type Result struct {
-	Proxy    fetcher.Proxy
-	OK       bool
-	RTT      time.Duration
-	ExitIP   string
-	AnonLvl  AnonLevel
-	Reason   string
+	Proxy   fetcher.Proxy
+	OK      bool
+	RTT     time.Duration
+	ExitIP  string
+	AnonLvl AnonLevel
+	Reason  string
+	MITM    *mitm.Verdict
 }
 
 type AnonLevel string
@@ -38,13 +40,19 @@ type Checker struct {
 	targetURL  string
 	timeout    time.Duration
 	concurrent int
+	mitm       *mitm.Engine
 	httpClient *http.Client
+
+	mu               sync.RWMutex
+	recentVerdicts   []mitm.Verdict
+	verdictsCapacity int
 }
 
 type Options struct {
 	TargetURL  string
 	Timeout    time.Duration
 	Concurrent int
+	MITM       *mitm.Engine
 }
 
 func New(opts Options) *Checker {
@@ -58,9 +66,28 @@ func New(opts Options) *Checker {
 		opts.Concurrent = 50
 	}
 	return &Checker{
-		targetURL:  opts.TargetURL,
-		timeout:    opts.Timeout,
-		concurrent: opts.Concurrent,
+		targetURL:        opts.TargetURL,
+		timeout:          opts.Timeout,
+		concurrent:       opts.Concurrent,
+		mitm:             opts.MITM,
+		verdictsCapacity: 200,
+	}
+}
+
+func (c *Checker) RecentVerdicts() []mitm.Verdict {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	out := make([]mitm.Verdict, len(c.recentVerdicts))
+	copy(out, c.recentVerdicts)
+	return out
+}
+
+func (c *Checker) recordVerdict(v mitm.Verdict) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.recentVerdicts = append(c.recentVerdicts, v)
+	if len(c.recentVerdicts) > c.verdictsCapacity {
+		c.recentVerdicts = c.recentVerdicts[len(c.recentVerdicts)-c.verdictsCapacity:]
 	}
 }
 
@@ -115,6 +142,16 @@ func (c *Checker) Check(ctx context.Context, p fetcher.Proxy) Result {
 	}
 
 	res.OK = true
+
+	if c.mitm != nil {
+		v := c.mitm.Probe(ctx, p)
+		res.MITM = &v
+		c.recordVerdict(v)
+		if !v.Clean {
+			res.OK = false
+			res.Reason = "MITM verdict unclean (score=" + fmt.Sprint(v.Score) + ")"
+		}
+	}
 	return res
 }
 

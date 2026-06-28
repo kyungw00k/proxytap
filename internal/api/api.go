@@ -7,8 +7,13 @@ import (
 	"strings"
 
 	"github.com/kyungw00k/proxytap/internal/fetcher"
+	"github.com/kyungw00k/proxytap/internal/mitm"
 	"github.com/kyungw00k/proxytap/internal/pool"
 )
+
+type VerdictSource interface {
+	RecentVerdicts() []mitm.Verdict
+}
 
 // Server is the read-mostly control plane. It exposes JSON endpoints for the
 // (future) menubar app and for ad-hoc curl inspection.
@@ -16,6 +21,7 @@ type Server struct {
 	listenAddr string
 	pool       *pool.Pool
 	fetcher    *fetcher.Fetcher
+	verdicts   VerdictSource
 	srv        *http.Server
 }
 
@@ -39,16 +45,18 @@ type ProxyDTO struct {
 	LastOK     string `json:"last_ok,omitempty"`
 }
 
-func New(listenAddr string, p *pool.Pool, f *fetcher.Fetcher) *Server {
+func New(listenAddr string, p *pool.Pool, f *fetcher.Fetcher, vs VerdictSource) *Server {
 	s := &Server{
 		listenAddr: listenAddr,
 		pool:       p,
 		fetcher:    f,
+		verdicts:   vs,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/stats", s.handleStats)
 	mux.HandleFunc("/proxies", s.handleProxies)
 	mux.HandleFunc("/sources", s.handleSources)
+	mux.HandleFunc("/mitm", s.handleMITM)
 	s.srv = &http.Server{Addr: listenAddr, Handler: mux}
 	return s
 }
@@ -122,6 +130,28 @@ func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (s *Server) handleMITM(w http.ResponseWriter, r *http.Request) {
+	onlyDirty := r.URL.Query().Has("dirty")
+	if s.verdicts == nil {
+		writeJSON(w, map[string]any{"verdicts": []any{}})
+		return
+	}
+	all := s.verdicts.RecentVerdicts()
+	out := make([]mitm.Verdict, 0, len(all))
+	for _, v := range all {
+		if onlyDirty && v.Clean {
+			continue
+		}
+		out = append(out, v)
+	}
+	writeJSON(w, map[string]any{
+		"total":      len(all),
+		"shown":      len(out),
+		"filter":     map[string]bool{"dirty": onlyDirty},
+		"verdicts":   out,
+	})
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
