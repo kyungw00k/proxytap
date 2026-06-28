@@ -21,8 +21,11 @@ import (
 	"github.com/kyungw00k/proxytap/internal/proxy"
 )
 
+var version = "dev"
+
 func main() {
 	var (
+		versionFlag   = flag.Bool("version", false, "print version and exit")
 		proxyListen   = flag.String("proxy-listen", "127.0.0.1:8888", "HTTP forward proxy listen address")
 		apiListen     = flag.String("api-listen", "127.0.0.1:9099", "control-plane REST API listen address")
 		cacheDir      = flag.String("cache-dir", defaultCacheDir(), "cache directory")
@@ -37,6 +40,11 @@ func main() {
 		globalRPS     = flag.Int("global-rps", 50, "max requests/sec through the local proxy (0 = unlimited)")
 	)
 	flag.Parse()
+
+	if *versionFlag {
+		fmt.Println("proxytapd", version)
+		return
+	}
 
 	if err := run(*proxyListen, *apiListen, *cacheDir,
 		*fetchInterval, *checkInterval, *checkTimeout, *checkWorkers,

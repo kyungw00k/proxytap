@@ -1,0 +1,73 @@
+name: menubar
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build ${{ matrix.settings.label }}
+    runs-on: ${{ matrix.settings.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - {label: 'macos-arm64',  os: macos-latest,    target: aarch64-apple-darwin,        args: '--target aarch64-apple-darwin'}
+          - {label: 'macos-x64',    os: macos-13,        target: x86_64-apple-darwin,         args: '--target x86_64-apple-darwin'}
+          - {label: 'linux-x64',    os: ubuntu-22.04,    target: x86_64-unknown-linux-gnu,   args: ''}
+          - {label: 'windows-x64',  os: windows-latest,  target: x86_64-pc-windows-msvc,     args: ''}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: menubar-app/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.settings.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: menubar-app/src-tauri -> target
+
+      - name: install linux deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
+            libssl-dev patchelf build-essential
+
+      - name: npm install
+        working-directory: menubar-app
+        run: npm install --no-audit --no-fund
+
+      - name: generate tauri icons
+        working-directory: menubar-app
+        run: npx tauri icon ../docs/logo.png
+
+      - uses: tauri-apps/tauri-action@v0
+        with:
+          projectPath: menubar-app
+          tagName: ${{ github.ref_name }}
+          releaseName: 'proxytap menubar ${{ github.ref_name }}'
+          releaseBody: 'Cross-platform menubar shell for proxytap. See README in menubar-app/ for usage.'
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.settings.args }}
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: menubar-${{ matrix.settings.label }}
+          path: |
+            menubar-app/src-tauri/target/**/release/bundle/**
+            menubar-app/src-tauri/target/release/bundle/**
+          if-no-files-found: warn
