@@ -1,0 +1,74 @@
+:root {
+  --bg: #0d1117;
+  --panel: #161b22;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --muted: #8b949e;
+  --accent: #58a6ff;
+  --green: #3fb950;
+  --red: #f85149;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  width: 360px;
+  height: 480px;
+  overflow: hidden;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 14px;
+  gap: 12px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+header img { width: 24px; height: 24px; }
+header h1 { margin: 0; font-size: 14px; font-weight: 600; }
+header .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+header .dot.ok { background: var(--green); }
+header .dot.err { background: var(--red); }
+
+.stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.stat {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.stat .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.stat .value { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.row {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+}
+button {
+  flex: 1;
+  background: var(--accent);
+  color: #fff;
+  border: 0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+}
+button.ghost { background: var(--panel); color: var(--muted); border: 1px solid var(--border); }

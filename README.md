@@ -1,15 +1,34 @@
-<p align="center"><img alt="proxytap logo" src="docs/logo.png" width="160"></p>
+<p align="center">
+  <img alt="proxytap logo" src="docs/logo.png" width="160">
+</p>
 
 <h1 align="center">proxytap</h1>
 
-<p align="center">A rotating anonymous-proxy gateway for crawlers and automation.</p>
+<p align="center">A rotating anonymous-proxy gateway with MITM detection. For crawlers, scrapers, and automation that need to look like many different users.</p>
+
+<p align="center">
+  <a href="https://github.com/kyungw00k/proxytap/releases/latest"><img alt="release" src="https://img.shields.io/github/v/release/kyungw00k/proxytap?style=flat-square&color=58a6ff"></a>
+  <a href="https://github.com/kyungw00k/proxytap/actions/workflows/release.yml"><img alt="build" src="https://img.shields.io/github/actions/workflow/status/kyungw00k/proxytap/release.yml?branch=master&style=flat-square"></a>
+  <a href="LICENSE"><img alt="license" src="https://img.shields.io/github/license/kyungw00k/proxytap?style=flat-square"></a>
+  <a href="https://github.com/kyungw00k/proxytap/stargazers"><img alt="stars" src="https://img.shields.io/github/stars/kyungw00k/proxytap?style=flat-square"></a>
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#configuration">Configuration</a> ·
+  <a href="#mitm-detection">MITM detection</a> ·
+  <a href="menubar-app/">Menubar app</a> ·
+  <a href="#install-with-homebrew-macoslinux">Homebrew</a>
+</p>
+
+---
 
 The daemon fetches public proxy lists (default: [iplocate/free-proxy-list]),
 health-checks each upstream, classifies anonymity, and exposes a single local
-HTTP endpoint that clients point their `HTTP_PROXY` at — no code changes needed.
+HTTP endpoint that clients point their `HTTP_PROXY` at — no code changes
+needed.
 
-> PoC (Phase 1). MITM detection, menubar UI, and rate-limiting land in later
-> phases — see `Roadmap` below.
+> PoC (Phases 1-5 shipped). Tauri menubar shell is in [`menubar-app/`](menubar-app/).
 
 ## Architecture
 
@@ -51,11 +70,23 @@ curl -fsSL https://raw.githubusercontent.com/kyungw00k/proxytap/master/scripts/i
 # https://github.com/kyungw00k/proxytap/releases/latest
 ```
 
+### Install with Homebrew (macOS/Linux)
+
+```bash
+brew tap kyungw00k/tap
+brew install proxytap
+brew services start proxytap
+```
+
 Then open the dashboard at <http://127.0.0.1:9099/> or use the local proxy:
 
 ```bash
 curl -x http://127.0.0.1:8888 https://api.iplocate.io/ip
 ```
+
+### Menubar app (macOS/Windows/Linux)
+
+A thin Tauri shell that lives in your menu bar and opens the dashboard on click. Build it from source in [`menubar-app/`](menubar-app/). Pre-built bundles will ship once the build pipeline is wired.
 
 ## Configuration (CLI flags)
 
