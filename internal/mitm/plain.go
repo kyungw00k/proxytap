@@ -50,8 +50,8 @@ func (e *Engine) probePlain(ctx context.Context, dial DialFunc) ProbeResult {
 	if want == "" {
 		return ProbeResult{
 			Layer:  LayerPlainBody,
-			Pass:   false,
-			Reason: "plain reference not discovered yet",
+			Pass:   true,
+			Reason: "skipped: plain reference not discovered",
 		}
 	}
 

@@ -96,6 +96,9 @@ func (c *Checker) recordVerdict(v mitm.Verdict) {
 // header check falls back to "unknown" — full classification across schemes
 // is implemented in the MITM engine (Phase 2).
 func (c *Checker) Check(ctx context.Context, p fetcher.Proxy) Result {
+	probeCtx, cancel := context.WithTimeout(ctx, c.timeout*4)
+	defer cancel()
+
 	res := Result{Proxy: p, AnonLvl: AnonUnknown}
 	client, err := c.clientFor(p)
 	if err != nil {
@@ -104,7 +107,7 @@ func (c *Checker) Check(ctx context.Context, p fetcher.Proxy) Result {
 	}
 
 	probeStart := time.Now()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.targetURL, nil)
+	req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, c.targetURL, nil)
 	if err != nil {
 		res.Reason = "bad request: " + err.Error()
 		return res
@@ -144,7 +147,7 @@ func (c *Checker) Check(ctx context.Context, p fetcher.Proxy) Result {
 	res.OK = true
 
 	if c.mitm != nil {
-		v := c.mitm.Probe(ctx, p)
+		v := c.mitm.Probe(probeCtx, p)
 		res.MITM = &v
 		c.recordVerdict(v)
 		if !v.Clean {

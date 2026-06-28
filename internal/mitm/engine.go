@@ -21,7 +21,7 @@ type Engine struct {
 	timeout     time.Duration
 
 	mu       sync.RWMutex
-	pins     map[string]string
+	pins     map[string]Pin
 	plainRef string
 
 	directDialer *net.Dialer
@@ -38,7 +38,7 @@ func New(opts Options) *Engine {
 		opts.PinHosts = DefaultPinHosts()
 	}
 	if opts.PlainTarget == "" {
-		opts.PlainTarget = "http://httpbin.org/get"
+		opts.PlainTarget = "http://example.com/"
 	}
 	if opts.Timeout == 0 {
 		opts.Timeout = 8 * time.Second
@@ -47,16 +47,16 @@ func New(opts Options) *Engine {
 		pinHosts:     opts.PinHosts,
 		plainTarget:  opts.PlainTarget,
 		timeout:      opts.Timeout,
-		pins:         map[string]string{},
+		pins:         map[string]Pin{},
 		directDialer: &net.Dialer{Timeout: opts.Timeout},
 	}
 }
 
 func DefaultPinHosts() []string {
 	return []string{
-		"www.google.com:443",
-		"cloudflare.com:443",
-		"github.com:443",
+		"example.com:443",
+		"www.iana.org:443",
+		"www.cloudflare.com:443",
 	}
 }
 
@@ -66,10 +66,10 @@ func (e *Engine) PinsDiscovered() bool {
 	return len(e.pins) > 0
 }
 
-func (e *Engine) SnapshotPins() map[string]string {
+func (e *Engine) SnapshotPins() map[string]Pin {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	out := make(map[string]string, len(e.pins))
+	out := make(map[string]Pin, len(e.pins))
 	for k, v := range e.pins {
 		out[k] = v
 	}

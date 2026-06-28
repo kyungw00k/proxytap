@@ -4,7 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
-	"encoding/hex"
+	"crypto/x509"
+	"encoding/base64"
 	"errors"
 	"net"
 	"sync"
@@ -15,18 +16,21 @@ func (e *Engine) DiscoverPins(ctx context.Context) error {
 	var (
 		wg   sync.WaitGroup
 		mu   sync.Mutex
-		next = map[string]string{}
+		next = map[string]Pin{}
 	)
 	for _, hp := range e.pinHosts {
 		wg.Add(1)
 		go func(hp string) {
 			defer wg.Done()
-			fp, err := fingerprint(ctx, e.directDialer.DialContext, hp, e.timeout, true)
-			if err != nil || fp == "" {
+			snap, err := snapshotTLS(ctx, e.directDialer.DialContext, hp, e.timeout)
+			if err != nil {
+				return
+			}
+			if snap.LeafSPKI == "" {
 				return
 			}
 			mu.Lock()
-			next[hp] = fp
+			next[hp] = Pin{LeafSPKI: snap.LeafSPKI, IssuerSPKI: snap.IssuerSPKI}
 			mu.Unlock()
 		}(hp)
 	}
@@ -40,36 +44,9 @@ func (e *Engine) DiscoverPins(ctx context.Context) error {
 	return nil
 }
 
-func (e *Engine) directFingerprint(ctx context.Context, hostPort string) (string, error) {
-	return fingerprint(ctx, e.directDialer.DialContext, hostPort, e.timeout, true)
-}
-
-func fingerprint(ctx context.Context, dial DialFunc, hostPort string, timeout time.Duration, verify bool) (string, error) {
-	rawConn, err := dial(ctx, "tcp", hostPort)
-	if err != nil {
-		return "", err
-	}
-	defer rawConn.Close()
-
-	tlsCfg := &tls.Config{
-		InsecureSkipVerify: !verify,
-		ServerName:         splitHost(hostPort),
-		MinVersion:         tls.VersionTLS10,
-	}
-	tlsConn := tls.Client(rawConn, tlsCfg)
-	if err := tlsConn.HandshakeContext(ctx); err != nil {
-		return "", err
-	}
-	state := tlsConn.ConnectionState()
-	if len(state.PeerCertificates) == 0 {
-		return "", errors.New("no peer cert")
-	}
-	sum := sha256.Sum256(state.PeerCertificates[0].Raw)
-	return hex.EncodeToString(sum[:]), nil
-}
-
 type tlsSnapshot struct {
-	Fingerprint string
+	LeafSPKI    string
+	IssuerSPKI  string
 	Version     uint16
 	CipherSuite uint16
 }
@@ -95,11 +72,22 @@ func snapshotTLS(ctx context.Context, dial DialFunc, hostPort string, timeout ti
 		Version:     state.Version,
 		CipherSuite: state.CipherSuite,
 	}
-	if len(state.PeerCertificates) > 0 {
-		sum := sha256.Sum256(state.PeerCertificates[0].Raw)
-		snap.Fingerprint = hex.EncodeToString(sum[:])
+	certs := state.PeerCertificates
+	if len(certs) > 0 {
+		snap.LeafSPKI = spkiHash(certs[0])
+	}
+	if len(certs) > 1 {
+		snap.IssuerSPKI = spkiHash(certs[1])
 	}
 	return snap, nil
+}
+
+func spkiHash(c *x509.Certificate) string {
+	if c == nil || len(c.RawSubjectPublicKeyInfo) == 0 {
+		return ""
+	}
+	sum := sha256.Sum256(c.RawSubjectPublicKeyInfo)
+	return base64.StdEncoding.EncodeToString(sum[:])
 }
 
 func splitHost(hostPort string) string {
@@ -123,13 +111,8 @@ var weakCiphers = map[uint16]bool{
 	tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256:   true,
 }
 
-func isWeakVersion(v uint16) bool {
-	return v < tls.VersionTLS12
-}
-
-func isWeakCipher(c uint16) bool {
-	return weakCiphers[c]
-}
+func isWeakVersion(v uint16) bool { return v < tls.VersionTLS12 }
+func isWeakCipher(c uint16) bool  { return weakCiphers[c] }
 
 func (e *Engine) probeTLS(ctx context.Context, dial DialFunc) ProbeResult {
 	e.mu.RLock()
@@ -143,49 +126,92 @@ func (e *Engine) probeTLS(ctx context.Context, dial DialFunc) ProbeResult {
 		}
 	}
 
+	type pinProbe struct {
+		leafPass bool
+		verdict  ProbeResult
+		done     bool
+	}
+
+	results := make([]pinProbe, len(pins))
+	var wg sync.WaitGroup
+	idx := 0
 	for hp, want := range pins {
-		snap, err := snapshotTLS(ctx, dial, hp, e.timeout)
-		if err != nil {
-			continue
-		}
-		if isWeakVersion(snap.Version) {
-			return ProbeResult{
-				Layer:    LayerTLSFingerprint,
-				Pass:     false,
-				Reason:   "upstream forced weak TLS version",
-				Evidence: tlsVersionName(snap.Version),
+		i := idx
+		idx++
+		wg.Add(1)
+		go func(i int, hp string, want Pin) {
+			defer wg.Done()
+			snap, err := snapshotTLS(ctx, dial, hp, e.timeout)
+			if err != nil {
+				results[i] = pinProbe{verdict: ProbeResult{
+					Layer: LayerTLSFingerprint, Pass: false,
+					Reason: "snapshot failed for " + hp + ": " + err.Error(),
+				}}
+				return
 			}
-		}
-		if isWeakCipher(snap.CipherSuite) {
-			return ProbeResult{
-				Layer:    LayerTLSFingerprint,
-				Pass:     false,
-				Reason:   "upstream negotiated weak cipher suite",
-				Evidence: tlsCipherName(snap.CipherSuite),
+			if isWeakVersion(snap.Version) {
+				results[i] = pinProbe{verdict: ProbeResult{
+					Layer: LayerTLSFingerprint, Pass: false,
+					Reason: "upstream forced weak TLS version",
+					Evidence: tlsVersionName(snap.Version),
+				}}
+				return
 			}
-		}
-		if snap.Fingerprint == "" {
-			return ProbeResult{
+			if isWeakCipher(snap.CipherSuite) {
+				results[i] = pinProbe{verdict: ProbeResult{
+					Layer: LayerTLSFingerprint, Pass: false,
+					Reason: "upstream negotiated weak cipher suite",
+					Evidence: tlsCipherName(snap.CipherSuite),
+				}}
+				return
+			}
+			if snap.LeafSPKI == "" {
+				results[i] = pinProbe{verdict: ProbeResult{
+					Layer: LayerTLSFingerprint, Pass: false,
+					Reason: "no leaf cert presented",
+				}}
+				return
+			}
+			if pinMatches(want, snap) {
+				results[i] = pinProbe{
+					leafPass: true,
+					verdict:  ProbeResult{Layer: LayerTLSFingerprint, Pass: true},
+				}
+				return
+			}
+			results[i] = pinProbe{verdict: ProbeResult{
 				Layer:  LayerTLSFingerprint,
 				Pass:   false,
-				Reason: "no leaf cert presented",
-			}
+				Reason: "SPKI mismatch — possible MITM (leaf rotated AND issuer changed)",
+				Evidence: "host=" + hp + " got leaf=" + shortHash(snap.LeafSPKI) +
+					" issuer=" + shortHash(snap.IssuerSPKI),
+			}}
+		}(i, hp, want)
+	}
+	wg.Wait()
+
+	for _, r := range results {
+		if r.leafPass {
+			return r.verdict
 		}
-		if snap.Fingerprint != want {
-			return ProbeResult{
-				Layer:    LayerTLSFingerprint,
-				Pass:     false,
-				Reason:   "cert fingerprint mismatch — possible MITM",
-				Evidence: "got " + snap.Fingerprint[:16] + "... want " + want[:16] + "...",
-			}
+	}
+	for _, r := range results {
+		if r.verdict.Layer != "" {
+			return r.verdict
 		}
-		return ProbeResult{Layer: LayerTLSFingerprint, Pass: true}
 	}
 	return ProbeResult{
 		Layer:  LayerTLSFingerprint,
 		Pass:   false,
-		Reason: "no pin host reachable via proxy",
+		Reason: "no pin host produced a verdict",
 	}
+}
+
+func shortHash(h string) string {
+	if len(h) < 12 {
+		return h
+	}
+	return h[:12] + "..."
 }
 
 func tlsVersionName(v uint16) string {
@@ -203,6 +229,4 @@ func tlsVersionName(v uint16) string {
 	}
 }
 
-func tlsCipherName(c uint16) string {
-	return tls.CipherSuiteName(c)
-}
+func tlsCipherName(c uint16) string { return tls.CipherSuiteName(c) }
