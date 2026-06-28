@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>proxytap</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --muted: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --red: #f85149;
+    --yellow: #d29922;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #ffffff; --panel: #f6f8fa; --border: #d0d7de; --text: #1f2328; --muted: #636c76; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+  header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  header h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--muted);
+    display: inline-block;
+  }
+  .dot.ok { background: var(--green); }
+  .dot.warn { background: var(--yellow); }
+  .dot.err { background: var(--red); }
+  .stats-strip {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .stats-strip strong { color: var(--text); }
+  main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 24px;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  @media (min-width: 900px) {
+    main { grid-template-columns: 1fr 1fr; }
+    main .full { grid-column: 1 / -1; }
+  }
+  section {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+  }
+  section h2 {
+    margin: 0 0 12px;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  th, td {
+    text-align: left;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  th { color: var(--muted); font-weight: 500; }
+  td.num { text-align: right; }
+  .badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+  }
+  .badge.elite { color: var(--green); border-color: var(--green); }
+  .badge.anon { color: var(--yellow); border-color: var(--yellow); }
+  .badge.trans { color: var(--red); border-color: var(--red); }
+  .progress {
+    height: 6px;
+    background: var(--bg);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 6px;
+  }
+  .progress > div {
+    height: 100%;
+    background: var(--green);
+    transition: width 0.4s ease;
+  }
+  ul.sources {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  ul.sources li {
+    padding: 4px 0;
+    border-bottom: 1px dashed var(--border);
+    color: var(--muted);
+    word-break: break-all;
+  }
+  textarea {
+    width: 100%;
+    min-height: 80px;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+    resize: vertical;
+  }
+  button {
+    background: var(--accent);
+    color: #fff;
+    border: 0;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font: inherit;
+  }
+  button:hover { opacity: 0.9; }
+  button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .verdict-list { font-family: var(--mono); font-size: 11px; }
+  .verdict-list .row { padding: 4px 0; border-bottom: 1px dashed var(--border); display: flex; gap: 8px; align-items: flex-start; }
+  .verdict-list .row .ip { color: var(--muted); flex: 0 0 130px; }
+  .verdict-list .row .reason { flex: 1; word-break: break-word; }
+  .empty { color: var(--muted); font-style: italic; font-size: 12px; }
+  .refresh-note { font-size: 11px; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1><span id="status-dot" class="dot"></span> proxytap</h1>
+  <div class="stats-strip" id="stats-strip">loading…</div>
+</header>
+<main>
+  <section class="full">
+    <h2>Pool</h2>
+    <div id="pool-bar">
+      <div class="stats-strip"><span>Healthy: <strong id="healthy">—</strong> / <strong id="total">—</strong></span></div>
+      <div class="progress"><div id="healthy-bar" style="width:0%"></div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Healthy upstreams</h2>
+    <table>
+      <thead><tr><th>Address</th><th>Exit IP</th><th>Anon</th><th class="num">RTT</th></tr></thead>
+      <tbody id="healthy-proxies"><tr><td colspan="4" class="empty">loading…</td></tr></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Recent MITM verdicts</h2>
+    <div id="verdicts" class="verdict-list"><div class="empty">loading…</div></div>
+  </section>
+
+  <section class="full">
+    <h2>Sources</h2>
+    <ul id="sources" class="sources"><li class="empty">loading…</li></ul>
+    <textarea id="sources-edit" placeholder="One URL per line"></textarea>
+    <div style="margin-top:8px; display:flex; gap:8px;">
+      <button id="save-sources">Save</button>
+      <button id="reset-sources" class="ghost">Reload from daemon</button>
+    </div>
+  </section>
+
+  <section class="full">
+    <p class="refresh-note">Auto-refresh every 3s. <span id="last-fetch">never</span></p>
+  </section>
+</main>
+
+<script>
+const apiBase = window.location.origin;
+const fmtTime = ts => ts ? new Date(ts).toLocaleTimeString() : '—';
+
+async function get(path) {
+  const r = await fetch(apiBase + path, { cache: 'no-store' });
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+async function postJSON(path, body) {
+  const r = await fetch(apiBase + path, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  });
+  return r.ok;
+}
+
+function setStatus(state) {
+  const dot = document.getElementById('status-dot');
+  dot.className = 'dot ' + state;
+}
+
+function renderStats(s) {
+  const strip = document.getElementById('stats-strip');
+  strip.innerHTML = `
+    <span>Pool: <strong>${s.pool.Healthy}/${s.pool.Total}</strong></span>
+    <span>Served: <strong>${s.requests_served}</strong></span>
+    <span>Anon: <strong>${Object.entries(s.pool.ByAnon).map(([k,v])=>`${k}=${v}`).join(' ')}</strong></span>
+    <span>Fetched: <strong>${fmtTime(s.last_fetch)}</strong></span>
+  `;
+  document.getElementById('healthy').textContent = s.pool.Healthy;
+  document.getElementById('total').textContent = s.pool.Total;
+  const pct = s.pool.Total > 0 ? (s.pool.Healthy / s.pool.Total * 100) : 0;
+  document.getElementById('healthy-bar').style.width = pct + '%';
+  if (s.pool.Healthy > 0) setStatus('ok');
+  else if (s.pool.Total > 0) setStatus('warn');
+  else setStatus('err');
+  document.getElementById('last-fetch').textContent = 'last refresh: ' + new Date().toLocaleTimeString();
+}
+
+function renderProxies(proxies) {
+  const tbody = document.getElementById('healthy-proxies');
+  if (!proxies || proxies.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty">no healthy proxies</td></tr>';
+    return;
+  }
+  tbody.innerHTML = proxies.slice(0, 25).map(p => `
+    <tr>
+      <td>${p.scheme}://${p.address}</td>
+      <td>${p.exit_ip || '—'}</td>
+      <td><span class="badge ${anonClass(p.anon_level)}">${p.anon_level || '?'}</span></td>
+      <td class="num">${p.rtt_ms || 0}ms</td>
+    </tr>
+  `).join('');
+}
+function anonClass(l) {
+  if (!l) return '';
+  if (l === 'elite') return 'elite';
+  if (l === 'anonymous') return 'anon';
+  if (l === 'transparent') return 'trans';
+  return '';
+}
+
+function renderVerdicts(data) {
+  const box = document.getElementById('verdicts');
+  const vs = (data.verdicts || []).slice(-12).reverse();
+  if (vs.length === 0) {
+    box.innerHTML = '<div class="empty">no verdicts yet</div>';
+    return;
+  }
+  box.innerHTML = vs.map(v => {
+    const fails = v.probes.filter(p => !p.pass);
+    const status = v.clean ? 'ok' : 'err';
+    const reason = fails.length === 0
+      ? 'clean'
+      : fails.map(f => `<span style="color:var(--red)">${f.layer}</span>: ${escapeHtml(f.reason || '')}`).join('; ');
+    return `<div class="row">
+      <span class="ip">${escapeHtml(v.proxy.address || '')}<br><span style="color:var(--muted)">${v.clean ? '✓' : '✗'} score=${v.score}</span></span>
+      <span class="reason">${reason}</span>
+    </div>`;
+  }).join('');
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function loadSources() {
+  const data = await get('/sources');
+  const ul = document.getElementById('sources');
+  ul.innerHTML = (data.sources || []).map(u => `<li>${escapeHtml(u)}</li>`).join('') || '<li class="empty">no sources</li>';
+  document.getElementById('sources-edit').value = (data.sources || []).join('\n');
+}
+
+async function refresh() {
+  try {
+    const [stats, proxies, mitm] = await Promise.all([
+      get('/stats'),
+      get('/proxies?healthy'),
+      get('/mitm'),
+    ]);
+    renderStats(stats);
+    renderProxies(proxies);
+    renderVerdicts(mitm);
+  } catch (e) {
+    setStatus('err');
+    console.error(e);
+  }
+}
+
+document.getElementById('save-sources').addEventListener('click', async () => {
+  const text = document.getElementById('sources-edit').value;
+  const sources = text.split('\n').map(s => s.trim()).filter(Boolean);
+  await postJSON('/sources', { sources });
+  await loadSources();
+  await refresh();
+});
+document.getElementById('reset-sources').addEventListener('click', loadSources);
+
+loadSources();
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

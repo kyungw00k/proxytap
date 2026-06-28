@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -10,6 +11,9 @@ import (
 	"github.com/kyungw00k/proxytap/internal/mitm"
 	"github.com/kyungw00k/proxytap/internal/pool"
 )
+
+//go:embed dashboard/index.html
+var dashboardHTML []byte
 
 type VerdictSource interface {
 	RecentVerdicts() []mitm.Verdict
@@ -53,12 +57,23 @@ func New(listenAddr string, p *pool.Pool, f *fetcher.Fetcher, vs VerdictSource) 
 		verdicts:   vs,
 	}
 	mux := http.NewServeMux()
+	mux.HandleFunc("/", s.handleDashboard)
 	mux.HandleFunc("/stats", s.handleStats)
 	mux.HandleFunc("/proxies", s.handleProxies)
 	mux.HandleFunc("/sources", s.handleSources)
 	mux.HandleFunc("/mitm", s.handleMITM)
 	s.srv = &http.Server{Addr: listenAddr, Handler: mux}
 	return s
+}
+
+func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" && r.URL.Path != "/index.html" {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(dashboardHTML)
 }
 
 func (s *Server) ListenAndServe() error {
