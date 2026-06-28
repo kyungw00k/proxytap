@@ -29,6 +29,8 @@ control plane: 127.0.0.1:9099 (REST: /stats /proxies /sources)
 
 ## Quick start
 
+### From source
+
 ```bash
 go build ./cmd/proxytapd
 ./proxytapd
@@ -37,6 +39,22 @@ go build ./cmd/proxytapd
 curl http://api.iplocate.io/ip -x http://127.0.0.1:8888
 curl http://127.0.0.1:9099/stats | jq
 curl 'http://127.0.0.1:9099/proxies?healthy'
+```
+
+### Pre-built binary (Linux/macOS/Windows)
+
+```bash
+# Linux/macOS one-liner (auto-detects OS+arch, installs systemd unit on Linux)
+curl -fsSL https://raw.githubusercontent.com/kyungw00k/proxytap/master/scripts/install.sh | bash
+
+# Or pick a binary directly from releases
+# https://github.com/kyungw00k/proxytap/releases/latest
+```
+
+Then open the dashboard at <http://127.0.0.1:9099/> or use the local proxy:
+
+```bash
+curl -x http://127.0.0.1:8888 https://api.iplocate.io/ip
 ```
 
 ## Configuration (CLI flags)
@@ -53,6 +71,7 @@ curl 'http://127.0.0.1:9099/proxies?healthy'
 | `--pool-capacity` | `500` | Max proxies held in the pool |
 | `--min-anon` | `elite` | `elite` / `anonymous` / `transparent` |
 | `--mitm` | `true` | enable MITM detection on healthy proxies |
+| `--global-rps` | `50` | max requests/sec through local proxy (0 = unlimited) |
 | `--max-failures` | `5` | Failures before quarantining a proxy |
 
 ## Sources
@@ -67,11 +86,15 @@ Defaults (overridable via `POST /sources`):
 - [x] Phase 1: daemon — fetch, health-check, HTTP forward, REST
 - [x] Phase 2: MITM detection engine (cert fingerprint pinning, plain-body
       integrity, TLS cipher/version audit; verdicts exposed at `/mitm`)
-- [ ] Phase 2.1: cut false-positive rate — SPKI pinning, pin against stable
-      leaf-cert hosts (e.g. `example.com`) instead of global CDNs
-- [ ] Phase 3: menubar app (Tauri, Linux/Windows/macOS)
-- [ ] Phase 4: rate limiter (4-layer: global / target / upstream / source)
-- [ ] Phase 5: packaging (Homebrew, Winget, AUR, systemd/launchd units)
+- [x] Phase 2.1: SPKI pinning with rotation tolerance (leaf SPKI + issuer SPKI,
+      stable pin targets, parallel probe, plain-skip on missing ref)
+- [x] Phase 3a: embedded web dashboard at `GET /` (single-file, vanilla JS)
+- [x] Phase 4: global rate limiter (token bucket) + 429/403/503 auto-retry
+      with IP rotation
+- [x] Phase 5: packaging (GitHub Actions release matrix, systemd unit,
+      install.sh for Linux/macOS/Windows)
+- [ ] Phase 3b: Tauri menubar shell wrapping the dashboard (deferred — needs
+      a desktop env to visual-QA; dashboard already covers the use case)
 
 ## MITM detection (`--mitm`, default on)
 

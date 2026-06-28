@@ -1,0 +1,26 @@
+[Unit]
+Description=proxytap rotating anonymous-proxy daemon
+Documentation=https://github.com/kyungw00k/proxytap
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+ExecStart=/usr/local/bin/proxytapd \
+  --proxy-listen 127.0.0.1:8888 \
+  --api-listen 127.0.0.1:9099 \
+  --cache-dir /var/lib/proxytap/cache \
+  --mitm
+Restart=on-failure
+RestartSec=2
+User=proxytap
+Group=proxytap
+ReadWritePaths=/var/lib/proxytap
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
