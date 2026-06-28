@@ -12,17 +12,23 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/kyungw00k/proxytap/internal/limiter"
 	"github.com/kyungw00k/proxytap/internal/pool"
 	"golang.org/x/net/proxy"
 )
 
 const (
-	maxRetries       = 3
-	upstreamTimeout  = 30 * time.Second
-	copyBufferSize   = 32 * 1024
+	maxRetries      = 3
+	upstreamTimeout = 30 * time.Second
+	copyBufferSize  = 32 * 1024
 )
 
-// Picker abstracts pool.Pick so tests can inject a stub.
+var retryStatuses = map[int]bool{
+	http.StatusTooManyRequests:     true, // 429
+	http.StatusForbidden:           true, // 403
+	http.StatusServiceUnavailable:  true, // 503
+}
+
 type Picker interface {
 	Pick() (*pool.Entry, func(ok bool))
 }
@@ -30,16 +36,20 @@ type Picker interface {
 type Server struct {
 	listenAddr string
 	picker     Picker
+	bucket     *limiter.TokenBucket
 	srv        *http.Server
 	requests   atomic.Int64
 	bytesIn    atomic.Int64
 	bytesOut   atomic.Int64
+	blocked    atomic.Int64
+	retried    atomic.Int64
 }
 
-func New(listenAddr string, picker Picker) *Server {
+func New(listenAddr string, picker Picker, bucket *limiter.TokenBucket) *Server {
 	s := &Server{
 		listenAddr: listenAddr,
 		picker:     picker,
+		bucket:     bucket,
 	}
 	srv := &http.Server{
 		Addr:              listenAddr,
@@ -62,9 +72,17 @@ func (s *Server) Shutdown(ctx context.Context) error {
 func (s *Server) Requests() int64  { return s.requests.Load() }
 func (s *Server) BytesIn() int64   { return s.bytesIn.Load() }
 func (s *Server) BytesOut() int64  { return s.bytesOut.Load() }
+func (s *Server) Blocked() int64   { return s.blocked.Load() }
+func (s *Server) Retried() int64   { return s.retried.Load() }
 
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	s.requests.Add(1)
+	if s.bucket != nil && !s.bucket.Allow() {
+		s.blocked.Add(1)
+		w.Header().Set("Retry-After", "1")
+		http.Error(w, "proxytap: global rate limit exceeded", http.StatusTooManyRequests)
+		return
+	}
 	if r.Method == http.MethodConnect {
 		s.handleConnect(w, r)
 		return
@@ -72,7 +90,6 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	s.handleHTTP(w, r)
 }
 
-// handleHTTP forwards a plain-HTTP request through a rotating upstream.
 func (s *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {
@@ -89,9 +106,6 @@ func (s *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// Strip hop-by-hop headers and our own forwarded-by headers to
-		// reduce fingerprinting. The MITM engine (Phase 2) will add
-		// stronger sanitisation.
 		sanitizeHeaders(r.Header)
 
 		req := r.Clone(r.Context())
@@ -102,6 +116,15 @@ func (s *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 			lastErr = err
 			continue
 		}
+
+		if retryStatuses[resp.StatusCode] {
+			resp.Body.Close()
+			release(false)
+			s.retried.Add(1)
+			lastErr = fmt.Errorf("upstream returned %d", resp.StatusCode)
+			continue
+		}
+
 		defer resp.Body.Close()
 		copyHeaders(w.Header(), resp.Header)
 		w.WriteHeader(resp.StatusCode)

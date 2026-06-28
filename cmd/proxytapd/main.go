@@ -15,6 +15,7 @@ import (
 	"github.com/kyungw00k/proxytap/internal/api"
 	"github.com/kyungw00k/proxytap/internal/checker"
 	"github.com/kyungw00k/proxytap/internal/fetcher"
+	"github.com/kyungw00k/proxytap/internal/limiter"
 	"github.com/kyungw00k/proxytap/internal/mitm"
 	"github.com/kyungw00k/proxytap/internal/pool"
 	"github.com/kyungw00k/proxytap/internal/proxy"
@@ -33,12 +34,13 @@ func main() {
 		maxFailures   = flag.Int("max-failures", 5, "consecutive failures before a proxy is quarantined")
 		capacity      = flag.Int("pool-capacity", 500, "max proxies held in the pool")
 		mitmEnabled   = flag.Bool("mitm", true, "enable MITM detection on healthy proxies")
+		globalRPS     = flag.Int("global-rps", 50, "max requests/sec through the local proxy (0 = unlimited)")
 	)
 	flag.Parse()
 
 	if err := run(*proxyListen, *apiListen, *cacheDir,
 		*fetchInterval, *checkInterval, *checkTimeout, *checkWorkers,
-		*minAnon, *maxFailures, *capacity, *mitmEnabled); err != nil {
+		*minAnon, *maxFailures, *capacity, *mitmEnabled, *globalRPS); err != nil {
 		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
 		os.Exit(1)
 	}
@@ -49,7 +51,7 @@ func run(
 	fetchInterval, checkInterval, checkTimeout time.Duration,
 	checkWorkers int,
 	minAnon string, maxFailures, capacity int,
-	mitmEnabled bool,
+	mitmEnabled bool, globalRPS int,
 ) error {
 	rootCtx, cancel := signal.NotifyContext(context.Background(),
 		os.Interrupt, syscall.SIGTERM)
@@ -107,7 +109,11 @@ func run(
 	)
 
 	// local forward proxy (HTTP CONNECT for HTTPS, plain HTTP forward)
-	proxySrv := proxy.New(proxyListen, p)
+	var bucket *limiter.TokenBucket
+	if globalRPS > 0 {
+		bucket = limiter.NewTokenBucket(globalRPS, globalRPS*2)
+	}
+	proxySrv := proxy.New(proxyListen, p, bucket)
 	go func() {
 		if err := proxySrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			fmt.Fprintf(os.Stderr, "proxy server error: %v\n", err)
