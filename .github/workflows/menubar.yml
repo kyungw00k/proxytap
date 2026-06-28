@@ -51,12 +51,20 @@ jobs:
         working-directory: menubar-app
         run: npx tauri icon ../docs/logo.png
 
+      - name: build bundle (no release upload on non-tag refs)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        working-directory: menubar-app
+        run: npx tauri build ${{ matrix.settings.args }}
+
       - uses: tauri-apps/tauri-action@v0
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: menubar-app
           tagName: ${{ github.ref_name }}
           releaseName: 'proxytap menubar ${{ github.ref_name }}'
-          releaseBody: 'Cross-platform menubar shell for proxytap. See README in menubar-app/ for usage.'
+          releaseBody: 'Cross-platform menubar shell for proxytap. See menubar-app/README.md for usage.'
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.settings.args }}
