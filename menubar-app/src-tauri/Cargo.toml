@@ -6,10 +6,6 @@ authors = ["kyungw00k"]
 edition = "2021"
 rust-version = "1.77"
 
-[lib]
-name = "proxytap_menubar_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
-
 [build-dependencies]
 tauri-build = { version = "2.0", features = [] }
 
