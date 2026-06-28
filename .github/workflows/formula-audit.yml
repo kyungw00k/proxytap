@@ -29,6 +29,8 @@ jobs:
           REPO_DIR="$(brew --repository)/Library/Taps/kyungw00k"
           mkdir -p "$REPO_DIR"
           ln -s "$GITHUB_WORKSPACE/tap" "$REPO_DIR/homebrew-tap"
+      - name: brew trust tap
+        run: brew trust kyungw00k/tap
       - name: brew audit --strict --online
         env:
           HOMEBREW_NO_INSTALL_FROM_API: '1'
