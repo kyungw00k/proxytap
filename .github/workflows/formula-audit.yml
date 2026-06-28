@@ -24,15 +24,12 @@ jobs:
           ref: main
           path: tap
       - uses: Homebrew/actions/setup-homebrew@master
+      - name: link tap into Homebrew Library
+        run: |
+          REPO_DIR="$(brew --repository)/Library/Taps/kyungw00k"
+          mkdir -p "$REPO_DIR"
+          ln -s "$GITHUB_WORKSPACE/tap" "$REPO_DIR/homebrew-tap"
       - name: brew audit --strict --online
-        working-directory: tap
         env:
           HOMEBREW_NO_INSTALL_FROM_API: '1'
-        run: |
-          # 'brew style' is intentionally skipped — tap-local formulae that
-          # dispatch on_macos/on_intel/on_arm with def install inside blocks
-          # (idiomatic for pre-built-binary taps, not for homebrew/core) trip
-          # Sorbet/StrictSigil, Sorbet/TrueSigil, Sorbet/BlockMethodDefinition.
-          # Those are style choices, not correctness bugs. The audit step
-          # below covers actual correctness (URL, sha256, license, etc).
-          brew audit --strict --online ./proxytap.rb
+        run: brew audit --strict --online proxytap
